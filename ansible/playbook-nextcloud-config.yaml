@@ -1,0 +1,28 @@
+---
+- hosts: all
+  become: true
+  vars:
+    VOLUME_DIR: /var/ebs
+    NEXTCLOUD_DOMAIN: "{{ lookup('env', 'NEXTCLOUD_DOMAIN') }}"
+    PWD: "{{ VOLUME_DIR }}"
+    NEXTCLOUD_CONFIG_PHP: "{{ PWD }}/volume/nextcloud/config/config.php"
+  
+  tasks:
+    - name: Backup config.php to config.php.bak
+      copy:
+        src: "{{ NEXTCLOUD_CONFIG_PHP }}"
+        dest: "{{ NEXTCLOUD_CONFIG_PHP }}.bak"
+        remote_src: true
+    - name: Read nextcloud config.php
+      shell: "cat {{ NEXTCLOUD_CONFIG_PHP }}"
+      register: config
+    - name: Replace nextcloud config.php
+      set_fact:
+        config: "{{ config.stdout | regex_replace(\"(?<!'overwriteprotocol' => 'https',\\n)(\\);)\", \"  'overwriteprotocol' => 'https',\\n\\1\") }}"
+        # config: "{{ config.stdout | regex_replace(\"(?!')(http)(?=://[^']+)\", 'https') | regex_replace(\"(?<!'overwriteprotocol' => 'https',\\n)(\\);)\", \"  'overwriteprotocol' => 'https',\\n\\1\") }}"
+    - debug:
+        msg: "{{ config }}"
+    - name: Write nextcloud config.php
+      copy:
+        content: "{{ config }}"
+        dest: "{{ NEXTCLOUD_CONFIG_PHP }}"

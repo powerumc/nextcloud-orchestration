@@ -1,0 +1,92 @@
+---
+- hosts: all
+  become: true
+  vars_files:
+    - vars/packages.yaml
+  vars:
+    # NEXTCLOUD_IP: "{{ lookup('env', 'NEXTCLOUD_IP') }}"
+    # NEXTCLOUD_DOMAIN: "{{ lookup('env', 'NEXTCLOUD_DOMAIN') }}"
+    # NEXTCLOUD_EMAIL: "{{ lookup('env', 'NEXTCLOUD_EMAIL') }}"
+    # NEXTCLOUD_HOSTNAME: "{{ NEXTCLOUD_DOMAIN | ternary(NEXTCLOUD_DOMAIN, NEXTCLOUD_IP) }}"
+    NEXTCLUD_PWD: /var/ebs
+
+  tasks:
+    - name: Add Docker repo
+      get_url:
+        url: https://download.docker.com/linux/centos/docker-ce.repo
+        dest: /etc/yum.repos.d/docker-ce.repo
+    - name: Update yum packages
+      yum:
+        name: "*"
+        state: latest
+    - name: Add extras repository
+      shell: yum-config-manager --enable extras
+    - name: Install packages
+      yum:
+        name: "{{ required_packages }}"
+        state: present
+        update_cache: true
+    - name: Install docker-ce
+      shell: "amazon-linux-extras install docker=18.06.1 -y"
+    - name: Enable Docker CE service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+    - name: Install python3 and pip3
+      shell: "amazon-linux-extras install python3 -y"
+    - name: Install pip packages
+      shell: "pip3 install docker-compose"
+    - name: Modify ec2-user
+      shell: "usermod -a -G docker ec2-user"
+    - name: Create ebs volumn directory
+      file:
+        path: "{{ item }}"
+        state: directory
+      with_items:
+        - "{{ NEXTCLUD_PWD }}"
+    - name: Format volume
+      filesystem:
+        fstype: ext4
+        dev: /dev/xvdf
+    - name: Mount volume
+      mount:
+        path: "{{ NEXTCLUD_PWD }}"
+        src: /dev/xvdf
+        state: present
+        fstype: ext4
+        opts: "defaults,noatime"
+    - name: Change permission directory
+      file:
+        path: "{{ NEXTCLUD_PWD }}"
+        owner: "{{ ansible_user }}"
+        recurse: true
+    - name: Reboot a machine
+      reboot:
+    - name: Create ebs docker volumn directory
+      file:
+        path: "{{ item }}"
+        state: directory
+      with_items:
+        - "{{ NEXTCLUD_PWD }}/volume"
+        - "{{ NEXTCLUD_PWD }}/volume/db"
+        - "{{ NEXTCLUD_PWD }}/volume/nextcloud"
+        - "{{ NEXTCLUD_PWD }}/volume/certs"
+        - "{{ NEXTCLUD_PWD }}/volume/vhost.d"
+        - "{{ NEXTCLUD_PWD }}/volume/html"
+    - name: Copy docker-compose files
+      copy:
+        src: files/
+        dest: "{{ NEXTCLUD_PWD }}/"
+    - name: Start docker-compose
+      shell: "docker-compose up --build -d"
+      environment:
+        NEXTCLUD_PWD: "{{ NEXTCLUD_PWD }}"
+        # NEXTCLOUD_HOSTNAME: "{{ NEXTCLOUD_HOSTNAME }}"
+        # NEXTCLOUD_DOMAIN: "{{ NEXTCLOUD_DOMAIN }}"
+        # NEXTCLOUD_EMAIL: "{{ NEXTCLOUD_EMAIL }}"
+        # NEXTCLOUD_DB_ROOT_PASSWORD: "{{ NEXTCLOUD_DB_ROOT_PASSWORD }}"
+        # NEXTCLOUD_DB_PASSWORD: "{{ NEXTCLOUD_DB_PASSWORD }}"
+      args:
+        chdir: "{{ NEXTCLUD_PWD }}"
+      become: false

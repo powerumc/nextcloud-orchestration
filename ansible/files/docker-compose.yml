@@ -1,0 +1,105 @@
+version: '3'
+
+services:
+  db:
+    image: mariadb
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    restart: always
+    volumes:
+      - db:/var/lib/mysql
+    environment:
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_INITDB_SKIP_TZINFO=1
+    env_file: ./db.env
+
+  app:
+    image: nextcloud:fpm-alpine
+    restart: always
+    volumes:
+      - nextcloud:/var/www/html
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+    env_file:
+      - ./app.env
+    depends_on:
+      - db
+
+  web:
+    build: ./web
+    restart: always
+    volumes:
+      - nextcloud:/var/www/html:ro
+    env_file:
+      - ./web.env
+    depends_on:
+      - app
+    networks:
+      - proxy-tier
+      - default
+
+  proxy:
+    build: ./proxy
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+    labels:
+      com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy: "true"
+    volumes:
+      - certs:/etc/nginx/certs:ro
+      - vhost.d:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    networks:
+      - proxy-tier
+
+  letsencrypt-companion:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    restart: always
+    volumes:
+      - certs:/etc/nginx/certs
+      - vhost.d:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy-tier
+    depends_on:
+      - proxy
+
+volumes:
+  db:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/ebs/volume/db
+      o: bind
+  nextcloud:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/ebs/volume/nextcloud
+      o: bind
+  certs:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/ebs/volume/certs
+      o: bind
+  vhost.d:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/ebs/volume/vhost.d
+      o: bind
+  html:
+    driver: local
+    driver_opts:
+      type: none
+      device: /var/ebs/volume/html
+      o: bind
+
+networks:
+  proxy-tier:

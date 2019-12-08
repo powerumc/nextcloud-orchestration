@@ -7,3 +7,7 @@
 
 # .tfvars files
 *.tfvars
+
+ansible/hosts.ini
+*.retry
+ansible/files/*.env
